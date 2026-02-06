@@ -2,99 +2,106 @@ name: Build and Deploy GitBook
 
 on:
   push:
-    branches:
-      - main
-
-permissions:
-  contents: write
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      # ----------------------------
-      # Checkout repo
-      # ----------------------------
-      - name: Checkout Repository
-        uses: actions/checkout@v4
 
-      # ----------------------------
-      # Use OLD node version (GitBook safe)
-      # ----------------------------
+      - name: Checkout
+        uses: actions/checkout@v3
+
+
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v3
         with:
-          node-version: 10
+          node-version: '10'
 
-      # ----------------------------
-      # Install GitBook CLI
-      # ----------------------------
+
       - name: Install GitBook
         run: |
           npm install -g gitbook-cli
+          gitbook fetch 3.2.2
+
+
+      - name: Build GitBook
+        run: |
           gitbook install
+          gitbook build
 
-      # ----------------------------
-      # Build GitBook
-      # ----------------------------
-      - name: Build Book
-        run: gitbook build . ./_book
 
-      # ----------------------------
-      # Inject FontAwesome (Reliable Load)
-      # ----------------------------
+# -------------------------
+# Inject FontAwesome
+# -------------------------
+
       - name: Inject FontAwesome
         run: |
           find _book -name "*.html" | while read file; do
+            sed -i '/font-awesome/d' "$file"
             sed -i 's|</head>|<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"></head>|' "$file"
           done
 
-      # ----------------------------
-      # Auto Sidebar Icon Injection
-      # ----------------------------
-      - name: Inject Sidebar Icons
+
+# -------------------------
+# AUTO SIDEBAR ICON ENGINE
+# -------------------------
+
+      - name: Auto Inject Sidebar Icons
         run: |
 
-          FILE="_book/summary.html"
+          SUMMARY="_book/summary.html"
 
-          declare -A ICON_MAP=(
-            ["Theme Settings"]="sliders"
-            ["Buttons"]="toggle-off"
-            ["Colors"]="palette"
-            ["Typography"]="font"
-            ["Cart"]="cart-plus"
-            ["Header"]="bars"
-            ["Footer"]="copyright"
-            ["Navigation Menu"]="indent"
-            ["Collections"]="table-cells-large"
-            ["Products"]="film"
-            ["Blog"]="warehouse"
-            ["Pages"]="file-lines"
-            ["Filters"]="filter"
+          # Remove existing icons to avoid duplicates
+          sed -i 's/<i class="fa-solid[^>]*><\/i>//g' $SUMMARY
+
+          # Auto icon based on filename keywords
+          declare -A ICONS=(
+            ["button"]="toggle-off"
+            ["color"]="palette"
+            ["typography"]="font"
+            ["cart"]="cart-shopping"
+            ["header"]="bars"
+            ["footer"]="copyright"
+            ["menu"]="indent"
+            ["navigation"]="indent"
+            ["collection"]="table-cells"
+            ["product"]="film"
+            ["blog"]="pen"
+            ["page"]="file-lines"
+            ["filter"]="filter"
+            ["setting"]="sliders"
           )
 
-          for TITLE in "${!ICON_MAP[@]}"; do
-            ICON=${ICON_MAP[$TITLE]}
+          for KEY in "${!ICONS[@]}"; do
+            ICON=${ICONS[$KEY]}
 
-            sed -i "s|<a[^>]*>$TITLE|<a><i class=\"fa-solid fa-$ICON\"></i> $TITLE|Ig" "$FILE"
+            sed -i "s|\(<a href=\"[^\"]*$KEY[^\"]*\"[^>]*>\)|\1<i class=\"fa-solid fa-$ICON\"></i> |Ig" "$SUMMARY"
+
           done
 
-      # ----------------------------
-      # Fix GitHub Pages Relative Path
-      # ----------------------------
-      - name: Fix GitHub Pages Path
+
+# -------------------------
+# Fix GitHub Pages Asset Paths
+# -------------------------
+
+      - name: Fix Asset Paths
         run: |
           find _book -name "*.html" | while read file; do
             sed -i 's|href="/|href="./|g' "$file"
             sed -i 's|src="/|src="./|g' "$file"
           done
 
-      # ----------------------------
-      # Deploy to gh-pages
-      # ----------------------------
-      - name: Deploy to GitHub Pages
+
+# -------------------------
+# Deploy
+# -------------------------
+
+      - name: Deploy GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./_book
+          force: true
