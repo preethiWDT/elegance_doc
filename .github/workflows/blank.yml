@@ -2,134 +2,99 @@ name: Build and Deploy GitBook
 
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
+    branches:
+      - main
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      # ----------------------------
+      # Checkout repo
+      # ----------------------------
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-      # KEEP Node 10 (GitBook needs it)
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
+      # ----------------------------
+      # Use OLD node version (GitBook safe)
+      # ----------------------------
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          node-version: '10'
+          node-version: 10
 
+      # ----------------------------
+      # Install GitBook CLI
+      # ----------------------------
       - name: Install GitBook
         run: |
           npm install -g gitbook-cli
-          gitbook fetch 3.2.2
-
-      # -----------------------------
-      # AUTO SUMMARY GENERATION
-      # -----------------------------
-      - name: Auto Generate SUMMARY
-        run: |
-          echo "# Summary" > SUMMARY.md
-          echo "" >> SUMMARY.md
-
-          find . -name "*.md" ! -name "README.md" ! -name "SUMMARY.md" | sort | while read file; do
-            title=$(basename "$file" .md | sed 's/-/ /g' | sed 's/\b\w/\U&/g')
-            echo "* [$title]($file)" >> SUMMARY.md
-          done
-
-      # -----------------------------
-      # SIMPLE MARKDOWN CLEANUP
-      # -----------------------------
-      - name: Clean Markdown
-        run: |
-          find . -type f -name "*.md" | while read file; do
-
-            # Convert hint blocks
-            sed -i 's/{% hint style="[^"]*" %}/> **TIP:** /g' "$file"
-            sed -i 's/{% hint %}/> **INFO:** /g' "$file"
-            sed -i 's/{% endhint %}/\n/g' "$file"
-
-            # Remove template vars
-            sed -i 's/{{[^}]*}}//g' "$file"
-
-          done
-
-      # -----------------------------
-      # Create book.json
-      # -----------------------------
-      - name: Create book.json
-        run: |
-          cat << 'EOF' > book.json
-          {
-            "title": "Documentation",
-            "plugins": [
-              "-search",
-              "fontsettings",
-              "theme-default"
-            ],
-            "pluginsConfig": {
-              "fontsettings": {
-                "theme": "white"
-              }
-            },
-            "styles": {
-              "website": "styles/website.css"
-            }
-          }
-          EOF
-
-      # -----------------------------
-      # Add FontAwesome + Styles
-      # -----------------------------
-      - name: Add Styles
-        run: |
-          mkdir -p styles
-
-          cat << 'EOF' > styles/website.css
-          @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css');
-
-          .markdown-section h1 i,
-          .markdown-section h2 i {
-            margin-right: 8px;
-            color: #555;
-          }
-          EOF
-
-      # -----------------------------
-      # BUILD GITBOOK
-      # -----------------------------
-      - name: Build GitBook
-        run: |
           gitbook install
-          gitbook build
 
-      # -----------------------------
-      # AUTO ICON INJECTION (POST BUILD)
-      # -----------------------------
-      - name: Auto Insert Icons Into HTML
+      # ----------------------------
+      # Build GitBook
+      # ----------------------------
+      - name: Build Book
+        run: gitbook build . ./_book
+
+      # ----------------------------
+      # Inject FontAwesome (Reliable Load)
+      # ----------------------------
+      - name: Inject FontAwesome
         run: |
-          cd _book
-
-          find . -name "*.html" | while read file; do
-            filename=$(basename "$file" .html | tr '[:upper:]' '[:lower:]')
-
-            # Auto icon = filename
-            sed -i "0,/<h1>/s|<h1>|<h1><i class=\"fa-solid fa-$filename\"></i> |" "$file"
+          find _book -name "*.html" | while read file; do
+            sed -i 's|</head>|<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"></head>|' "$file"
           done
 
-      # -----------------------------
-      # FIX GITHUB PAGES PATH
-      # -----------------------------
-      - name: Fix Asset Paths
+      # ----------------------------
+      # Auto Sidebar Icon Injection
+      # ----------------------------
+      - name: Inject Sidebar Icons
         run: |
-          sed -i 's|/gitbook/|gitbook/|g' _book/**/*.html || true
 
-      # -----------------------------
-      # DEPLOY
-      # -----------------------------
+          FILE="_book/summary.html"
+
+          declare -A ICON_MAP=(
+            ["Theme Settings"]="sliders"
+            ["Buttons"]="toggle-off"
+            ["Colors"]="palette"
+            ["Typography"]="font"
+            ["Cart"]="cart-plus"
+            ["Header"]="bars"
+            ["Footer"]="copyright"
+            ["Navigation Menu"]="indent"
+            ["Collections"]="table-cells-large"
+            ["Products"]="film"
+            ["Blog"]="warehouse"
+            ["Pages"]="file-lines"
+            ["Filters"]="filter"
+          )
+
+          for TITLE in "${!ICON_MAP[@]}"; do
+            ICON=${ICON_MAP[$TITLE]}
+
+            sed -i "s|<a[^>]*>$TITLE|<a><i class=\"fa-solid fa-$ICON\"></i> $TITLE|Ig" "$FILE"
+          done
+
+      # ----------------------------
+      # Fix GitHub Pages Relative Path
+      # ----------------------------
+      - name: Fix GitHub Pages Path
+        run: |
+          find _book -name "*.html" | while read file; do
+            sed -i 's|href="/|href="./|g' "$file"
+            sed -i 's|src="/|src="./|g' "$file"
+          done
+
+      # ----------------------------
+      # Deploy to gh-pages
+      # ----------------------------
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./_book
-          force: true
