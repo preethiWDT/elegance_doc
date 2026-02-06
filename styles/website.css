@@ -1,0 +1,7 @@
+@import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css');
+
+.markdown-section h1 i,
+.markdown-section h2 i {
+  margin-right: 8px;
+  color: #555;
+}
