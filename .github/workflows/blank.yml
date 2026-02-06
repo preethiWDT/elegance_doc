@@ -2,41 +2,37 @@ name: Build and Deploy GitBook
 
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
+    branches:
+      - main
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-
-      - name: Checkout
-        uses: actions/checkout@v3
-
+      - name: Checkout Repo
+        uses: actions/checkout@v4
 
       - name: Setup Node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '10'
+          node-version: 18
 
+      - name: Install GitBook CLI
+        run: npm install -g gitbook-cli
 
-      - name: Install GitBook
-        run: |
-          npm install -g gitbook-cli
-          gitbook fetch 3.2.2
-
+      - name: Install GitBook Plugins
+        run: gitbook install
 
       - name: Build GitBook
-        run: |
-          gitbook install
-          gitbook build
+        run: gitbook build
 
-
-# -------------------------
-# Inject FontAwesome
-# -------------------------
-
+      # ---------------------------
+      # Inject FontAwesome CSS
+      # ---------------------------
       - name: Inject FontAwesome
         run: |
           find _book -name "*.html" | while read file; do
@@ -44,64 +40,51 @@ jobs:
             sed -i 's|</head>|<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"></head>|' "$file"
           done
 
-
-# -------------------------
-# AUTO SIDEBAR ICON ENGINE
-# -------------------------
-
-      - name: Auto Inject Sidebar Icons
+      # ---------------------------
+      # Inject Sidebar Icons
+      # ---------------------------
+      - name: Inject Sidebar Icons
         run: |
 
-          SUMMARY="_book/summary.html"
-
-          # Remove existing icons to avoid duplicates
-          sed -i 's/<i class="fa-solid[^>]*><\/i>//g' $SUMMARY
-
-          # Auto icon based on filename keywords
           declare -A ICONS=(
-            ["button"]="toggle-off"
-            ["color"]="palette"
-            ["typography"]="font"
-            ["cart"]="cart-shopping"
+            ["shopify"]="cart-shopping"
+            ["quickstart"]="atom"
+            ["changelog"]="rectangle-list"
+            ["support"]="handshake"
+            ["install"]="link"
             ["header"]="bars"
-            ["footer"]="copyright"
             ["menu"]="indent"
-            ["navigation"]="indent"
-            ["collection"]="table-cells"
+            ["footer"]="copyright"
             ["product"]="film"
-            ["blog"]="pen"
-            ["page"]="file-lines"
+            ["collection"]="table-cells-large"
             ["filter"]="filter"
             ["setting"]="sliders"
+            ["page"]="file-lines"
+            ["blog"]="pen"
+            ["video"]="video"
           )
 
-          for KEY in "${!ICONS[@]}"; do
-            ICON=${ICONS[$KEY]}
+          find _book -name "*.html" | while read FILE; do
 
-            sed -i "s|\(<a href=\"[^\"]*$KEY[^\"]*\"[^>]*>\)|\1<i class=\"fa-solid fa-$ICON\"></i> |Ig" "$SUMMARY"
+            echo "Processing $FILE"
+
+            # Remove existing icons
+            sed -i 's/<i class="fa-solid[^>]*><\/i>//g' "$FILE"
+
+            for KEY in "${!ICONS[@]}"; do
+              ICON=${ICONS[$KEY]}
+
+              sed -i "s|\(<a href=\"[^\"]*$KEY[^\"]*\"[^>]*>\)|\1<i class=\"fa-solid fa-$ICON\"></i> |Ig" "$FILE"
+
+            done
 
           done
 
-
-# -------------------------
-# Fix GitHub Pages Asset Paths
-# -------------------------
-
-      - name: Fix Asset Paths
-        run: |
-          find _book -name "*.html" | while read file; do
-            sed -i 's|href="/|href="./|g' "$file"
-            sed -i 's|src="/|src="./|g' "$file"
-          done
-
-
-# -------------------------
-# Deploy
-# -------------------------
-
-      - name: Deploy GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+      # ---------------------------
+      # Deploy to GH Pages
+      # ---------------------------
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./_book
-          force: true
