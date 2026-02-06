@@ -2,8 +2,7 @@ name: Build and Deploy GitBook
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
 
 permissions:
   contents: write
@@ -13,78 +12,67 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 10
 
-      - name: Install GitBook CLI
-        run: npm install -g gitbook-cli
+      - run: |
+          npm install -g gitbook-cli
+          gitbook fetch 3.2.2
+          gitbook install
+          gitbook build
 
-      - name: Install GitBook Plugins
-        run: gitbook install
 
-      - name: Build GitBook
-        run: gitbook build
+# ----------------------------
+# Inject FontAwesome
+# ----------------------------
 
-      # ---------------------------
-      # Inject FontAwesome CSS
-      # ---------------------------
       - name: Inject FontAwesome
         run: |
-          find _book -name "*.html" | while read file; do
-            sed -i '/font-awesome/d' "$file"
-            sed -i 's|</head>|<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"></head>|' "$file"
+          find _book -name "*.html" | while read FILE; do
+            sed -i 's|</head>|<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"></head>|' "$FILE"
           done
 
-      # ---------------------------
-      # Inject Sidebar Icons
-      # ---------------------------
+
+# ----------------------------
+# Inject Sidebar Icons (MULTILINE SAFE)
+# ----------------------------
+
       - name: Inject Sidebar Icons
         run: |
 
           declare -A ICONS=(
-            ["shopify"]="cart-shopping"
-            ["quickstart"]="atom"
-            ["changelog"]="rectangle-list"
-            ["support"]="handshake"
-            ["install"]="link"
-            ["header"]="bars"
-            ["menu"]="indent"
-            ["footer"]="copyright"
+            ["blogs"]="pen"
+            ["collection"]="table-cells"
+            ["gallery"]="image"
             ["product"]="film"
-            ["collection"]="table-cells-large"
+            ["header"]="bars"
+            ["footer"]="copyright"
+            ["menu"]="indent"
             ["filter"]="filter"
             ["setting"]="sliders"
-            ["page"]="file-lines"
-            ["blog"]="pen"
-            ["video"]="video"
           )
 
           find _book -name "*.html" | while read FILE; do
 
-            echo "Processing $FILE"
-
-            # Remove existing icons
-            sed -i 's/<i class="fa-solid[^>]*><\/i>//g' "$FILE"
-
             for KEY in "${!ICONS[@]}"; do
               ICON=${ICONS[$KEY]}
 
-              sed -i "s|\(<a href=\"[^\"]*$KEY[^\"]*\"[^>]*>\)|\1<i class=\"fa-solid fa-$ICON\"></i> |Ig" "$FILE"
+              perl -0777 -pi -e "s|(<a href=\"[^\"]*$KEY[^\"]*\"[^>]*>)|\1<i class=\"fa-solid fa-$ICON\"></i> |ig" "$FILE"
 
             done
 
           done
 
-      # ---------------------------
-      # Deploy to GH Pages
-      # ---------------------------
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+
+# ----------------------------
+# Deploy
+# ----------------------------
+
+      - uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./_book
